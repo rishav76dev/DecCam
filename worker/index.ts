@@ -443,5 +443,3 @@ console.log(`
 │   POST /sync-campaign   (on-chain sync) │
 ╰─────────────────────────────────────────╯
 `);
-
-export default server;

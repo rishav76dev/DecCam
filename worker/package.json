@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
-    "dev": "bun --watch index.ts",
+    "dev": "bun run index.ts",
+    "watch": "bun --watch index.ts",
     "scrape-test": "bun run scraper.ts"
   },
   "dependencies": {
