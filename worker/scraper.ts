@@ -214,6 +214,10 @@ export async function scrapeBatch(
       const outcome = settled[j];
       const rawId = chunk[j] ?? "";
 
+      if (!outcome) {
+        continue;
+      }
+
       if (outcome.status === "fulfilled") {
         results.push(outcome.value);
       } else {

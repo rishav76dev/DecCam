@@ -7,12 +7,17 @@
 //    POST /scrape-batch    → scrape multiple tweets concurrently
 // ─────────────────────────────────────────────────────────────
 
+import { ethers } from "ethers";
+import campaignFactoryArtifact from "./abi.json";
 import { scrapeTweet, scrapeBatch, extractTweetId } from "./scraper";
 
 // ── Config ────────────────────────────────────────────────────
 
 const PORT = Number(process.env.PORT ?? 3001);
 const API_KEY = process.env.SCRAPING_DOG_API_KEY ?? "";
+const RPC_URL = process.env.RPC_URL ?? "";
+const PRIVATE_KEY = process.env.PRIVATE_KEY ?? "";
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS ?? "";
 
 if (!API_KEY) {
   console.error(
@@ -20,6 +25,50 @@ if (!API_KEY) {
       "           Create a .env file from .env.example and add your key.",
   );
   process.exit(1);
+}
+
+type CampaignSubmission = {
+  creator: string;
+  link: string;
+  views: bigint;
+  reward: bigint;
+  paid: boolean;
+};
+
+type TransactionReceiptLike = {
+  hash: string;
+};
+
+type TransactionResponseLike = {
+  wait(): Promise<TransactionReceiptLike>;
+};
+
+type CampaignFactoryContract = {
+  getSubmissionCount(campaignId: bigint): Promise<bigint>;
+  getSubmission(campaignId: bigint, index: number): Promise<CampaignSubmission>;
+  setViews(
+    campaignId: bigint,
+    index: number,
+    views: bigint,
+  ): Promise<TransactionResponseLike>;
+  finalizeResults(campaignId: bigint): Promise<TransactionResponseLike>;
+};
+
+function getCampaignFactoryContract(): CampaignFactoryContract {
+  if (!RPC_URL || !PRIVATE_KEY || !CONTRACT_ADDRESS) {
+    throw new Error(
+      "RPC_URL, PRIVATE_KEY, and CONTRACT_ADDRESS must be set for contract calls.",
+    );
+  }
+
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+
+  return new ethers.Contract(
+    CONTRACT_ADDRESS,
+    campaignFactoryArtifact.abi,
+    wallet,
+  ) as unknown as CampaignFactoryContract;
 }
 
 // ── CORS headers (allow all origins for local dev) ────────────
@@ -68,6 +117,7 @@ function handleHealth(): Response {
     env: {
       port: PORT,
       scrapingDogConfigured: Boolean(API_KEY),
+      contractConfigured: Boolean(RPC_URL && PRIVATE_KEY && CONTRACT_ADDRESS),
     },
   });
 }
@@ -179,6 +229,106 @@ async function handleScrapeBatch(req: Request): Promise<Response> {
   });
 }
 
+/**
+ * POST /sync-campaign
+ * Body: { "campaignId": 0 }
+ *
+ * Reads campaign submissions from the contract, scrapes each X post view count,
+ * writes views on-chain via setViews(), then finalizes the campaign.
+ */
+async function handleSyncCampaign(req: Request): Promise<Response> {
+  let body: Record<string, unknown>;
+
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return err("Request body must be valid JSON.");
+  }
+
+  const rawCampaignId = body["campaignId"];
+  if (
+    rawCampaignId === undefined ||
+    rawCampaignId === null ||
+    (typeof rawCampaignId !== "number" &&
+      typeof rawCampaignId !== "string" &&
+      typeof rawCampaignId !== "bigint")
+  ) {
+    return err('Missing or invalid field "campaignId".');
+  }
+
+  let campaignId: bigint;
+  try {
+    campaignId = BigInt(rawCampaignId);
+  } catch {
+    return err('Field "campaignId" must be a valid integer.');
+  }
+
+  try {
+    const campaignFactory = getCampaignFactoryContract();
+    const submissionCount = Number(
+      await campaignFactory.getSubmissionCount(campaignId),
+    );
+    const updates: Array<{
+      index: number;
+      link: string;
+      views: number;
+      txHash: string;
+    }> = [];
+
+    console.log(`[/sync-campaign] → campaignId: ${campaignId}`);
+    console.log(`[/sync-campaign] → submissions: ${submissionCount}`);
+
+    for (let index = 0; index < submissionCount; index++) {
+      const submission = await campaignFactory.getSubmission(campaignId, index);
+      let views = 0;
+
+      try {
+        const result = await scrapeTweet(submission.link, API_KEY);
+        views = result.views;
+        console.log(
+          `[/sync-campaign] [${index}] scraped ${views} views for ${submission.link}`,
+        );
+      } catch (scrapeError) {
+        const message =
+          scrapeError instanceof Error
+            ? scrapeError.message
+            : String(scrapeError);
+        console.warn(
+          `[/sync-campaign] [${index}] scrape failed: ${message}. Using 0 views.`,
+        );
+      }
+
+      const tx = await campaignFactory.setViews(campaignId, index, BigInt(views));
+      const receipt = await tx.wait();
+
+      updates.push({
+        index,
+        link: submission.link,
+        views,
+        txHash: receipt.hash,
+      });
+    }
+
+    const finalizeTx = await campaignFactory.finalizeResults(campaignId);
+    const finalizeReceipt = await finalizeTx.wait();
+
+    console.log(
+      `[/sync-campaign] ✓ finalized campaign ${campaignId} with tx ${finalizeReceipt.hash}`,
+    );
+
+    return ok({
+      campaignId: campaignId.toString(),
+      submissionCount,
+      updates,
+      finalizeTxHash: finalizeReceipt.hash,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[/sync-campaign] ✗ ${message}`);
+    return err(`Campaign sync failed: ${message}`, 502);
+  }
+}
+
 // ── Main router ───────────────────────────────────────────────
 
 async function router(req: Request): Promise<Response> {
@@ -203,10 +353,14 @@ async function router(req: Request): Promise<Response> {
     return handleScrapeBatch(req);
   }
 
+  if (method === "POST" && pathname === "/sync-campaign") {
+    return handleSyncCampaign(req);
+  }
+
   // ── 404 ───────────────────────────────────────────────────
   return err(
     `Route not found: ${method} ${pathname}. ` +
-      "Available: GET /health · POST /scrape · POST /scrape-batch",
+      "Available: GET /health · POST /scrape · POST /scrape-batch · POST /sync-campaign",
     404,
   );
 }
@@ -226,6 +380,7 @@ console.log(`
 │   GET  /health                          │
 │   POST /scrape          (single tweet)  │
 │   POST /scrape-batch    (bulk tweets)   │
+│   POST /sync-campaign   (on-chain sync) │
 ╰─────────────────────────────────────────╯
 `);
 
