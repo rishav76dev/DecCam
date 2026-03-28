@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { parseEther } from "viem";
+import { decodeEventLog, parseEther } from "viem";
 import { useAccount, useWalletClient } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { Plus, Search } from "lucide-react";
@@ -9,6 +9,7 @@ import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { CampaignCard } from "@/components/dashboard/CampaignCard";
 import {
   appChain,
+  campaignsQueryKey,
   campaignFactoryAbi,
   contractAddress,
   getGlobalStats,
@@ -143,12 +144,6 @@ export function Dashboard() {
     setCreateFeedback(null);
 
     try {
-      const beforeCount = await publicClient.readContract({
-        address: contractAddress,
-        abi: campaignFactoryAbi,
-        functionName: "getCampaignCount",
-      });
-
       const hash = await walletClient.writeContract({
         address: contractAddress,
         abi: campaignFactoryAbi,
@@ -159,18 +154,26 @@ export function Dashboard() {
         chain: walletClient.chain,
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
-      const afterCount = await publicClient.readContract({
-        address: contractAddress,
-        abi: campaignFactoryAbi,
-        functionName: "getCampaignCount",
-      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-      if (afterCount > beforeCount) {
-        saveCampaignName(Number(afterCount - 1n), normalizedName);
+      for (const log of receipt.logs) {
+        try {
+          const decodedLog = decodeEventLog({
+            abi: campaignFactoryAbi,
+            data: log.data,
+            topics: log.topics,
+          });
+
+          if (decodedLog.eventName === "CampaignCreated") {
+            saveCampaignName(Number(decodedLog.args.campaignId), normalizedName);
+            break;
+          }
+        } catch {
+          continue;
+        }
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      await queryClient.invalidateQueries({ queryKey: campaignsQueryKey });
       setCampaignName("");
       setBudgetEth("");
       setDurationMinutes("2");

@@ -8,6 +8,9 @@ const MONAD_TESTNET_CHAIN_ID = 10143;
 const MONAD_TESTNET_RPC_URL = "https://testnet-rpc.monad.xyz/";
 const LEGACY_MONAD_TESTNET_RPC_HOST = "rpc.testnet.monad.xyz";
 const CAMPAIGN_NAME_STORAGE_PREFIX = "deccam:campaign-name";
+const READ_BATCH_SIZE = 4;
+const RATE_LIMIT_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
+const MONAD_RATE_LIMIT_MESSAGE = "requests limited to 15/sec";
 
 const chainId = Number(import.meta.env.VITE_CHAIN_ID ?? 31337);
 
@@ -46,6 +49,7 @@ export const rpcUrl = rpcUrls[0];
 export const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS as
   | `0x${string}`
   | undefined;
+export const campaignsQueryKey = ["campaigns", contractAddress, chainId] as const;
 export const workerBaseUrl =
   import.meta.env.VITE_WORKER_URL ?? "http://localhost:3001";
 
@@ -102,6 +106,17 @@ export const appChain = defineChain({
 });
 
 export const campaignFactoryAbi = [
+  {
+    type: "event",
+    name: "CampaignCreated",
+    inputs: [
+      { name: "campaignId", type: "uint256", indexed: true },
+      { name: "brand", type: "address", indexed: true },
+      { name: "deadline", type: "uint256", indexed: false },
+      { name: "budget", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
   {
     type: "function",
     name: "getCampaignCount",
@@ -178,6 +193,50 @@ export const publicClient = createPublicClient({
   chain: appChain,
   transport: fallback(rpcUrls.map((url) => http(url, { timeout: 10_000 }))),
 });
+
+function isMonadRateLimitError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(MONAD_RATE_LIMIT_MESSAGE);
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, milliseconds);
+  });
+}
+
+const readContractWithRetry: typeof publicClient.readContract = async (parameters) => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await publicClient.readContract(parameters);
+    } catch (error) {
+      const retryDelay = RATE_LIMIT_RETRY_DELAYS_MS[attempt];
+
+      if (!retryDelay || !isMonadRateLimitError(error)) {
+        throw error;
+      }
+
+      await wait(retryDelay);
+    }
+  }
+};
+
+async function mapInBatches<TItem, TResult>(
+  items: readonly TItem[],
+  mapper: (item: TItem, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  const results: TResult[] = [];
+
+  for (let index = 0; index < items.length; index += READ_BATCH_SIZE) {
+    const batch = items.slice(index, index + READ_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map((item, batchIndex) => mapper(item, index + batchIndex)),
+    );
+
+    results.push(...batchResults);
+  }
+
+  return results;
+}
 
 function shortenAddress(address: string): string {
   return address.length > 10
@@ -271,7 +330,7 @@ async function fetchCampaigns(): Promise<Campaign[]> {
     return [];
   }
 
-  const count = await publicClient.readContract({
+  const count = await readContractWithRetry({
     address: contractAddress,
     abi: campaignFactoryAbi,
     functionName: "getCampaignCount",
@@ -283,30 +342,22 @@ async function fetchCampaigns(): Promise<Campaign[]> {
     return [];
   }
 
-  const [campaignResults, submissionCountResults] = await Promise.all([
-    Promise.all(
-      Array.from({ length: campaignCount }, (_, index) =>
-        publicClient.readContract({
-          address: contractAddress,
-          abi: campaignFactoryAbi,
-          functionName: "campaigns",
-          args: [BigInt(index)],
-        }),
-      ),
-    ),
-    Promise.all(
-      Array.from({ length: campaignCount }, (_, index) =>
-        publicClient.readContract({
-          address: contractAddress,
-          abi: campaignFactoryAbi,
-          functionName: "getSubmissionCount",
-          args: [BigInt(index)],
-        }),
-      ),
-    ),
-  ]);
+  return mapInBatches(Array.from({ length: campaignCount }, (_, index) => index), async (index) => {
+    const [campaignResult, submissionCountResult] = await Promise.all([
+      readContractWithRetry({
+        address: contractAddress,
+        abi: campaignFactoryAbi,
+        functionName: "campaigns",
+        args: [BigInt(index)],
+      }),
+      readContractWithRetry({
+        address: contractAddress,
+        abi: campaignFactoryAbi,
+        functionName: "getSubmissionCount",
+        args: [BigInt(index)],
+      }),
+    ]);
 
-  return campaignResults.map((campaignResult, index) => {
     const [brand, deadline, totalBudget, totalViews, resultsFinalized] = campaignResult;
     return {
       ...buildCampaignBase(
@@ -318,7 +369,7 @@ async function fetchCampaigns(): Promise<Campaign[]> {
         resultsFinalized,
       ),
       submissions: [],
-      submissionCount: Number(submissionCountResults[index]),
+      submissionCount: Number(submissionCountResult),
     };
   });
 }
@@ -329,13 +380,13 @@ async function fetchCampaignDetail(campaignId: number): Promise<Campaign | null>
   }
 
   const [campaignResult, submissionCountResult] = await Promise.all([
-    publicClient.readContract({
+    readContractWithRetry({
       address: contractAddress,
       abi: campaignFactoryAbi,
       functionName: "campaigns",
       args: [BigInt(campaignId)],
     }),
-    publicClient.readContract({
+    readContractWithRetry({
       address: contractAddress,
       abi: campaignFactoryAbi,
       functionName: "getSubmissionCount",
@@ -349,15 +400,15 @@ async function fetchCampaignDetail(campaignId: number): Promise<Campaign | null>
   let submissions: Submission[] = [];
 
   if (submissionCount > 0) {
-    const submissionResults = await Promise.all(
-      Array.from({ length: submissionCount }, (_, index) =>
-        publicClient.readContract({
+    const submissionResults = await mapInBatches(
+      Array.from({ length: submissionCount }, (_, index) => index),
+      (index) =>
+        readContractWithRetry({
           address: contractAddress,
           abi: campaignFactoryAbi,
           functionName: "getSubmission",
           args: [BigInt(campaignId), BigInt(index)],
         }),
-      ),
     );
 
     submissions = submissionResults.map((submissionResult, index) => {
@@ -393,8 +444,10 @@ async function fetchCampaignDetail(campaignId: number): Promise<Campaign | null>
 
 export function useCampaigns() {
   return useQuery({
-    queryKey: ["campaigns", contractAddress, chainId],
+    queryKey: campaignsQueryKey,
     queryFn: fetchCampaigns,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
