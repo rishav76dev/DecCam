@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 contract Campaign {
-
     address public brand;
     uint public deadline;
     uint public totalBudget;
-    uint public remainingBudget;
+    uint public totalViews;
+    bool public resultsFinalized;
 
     struct Submission {
         address creator;
@@ -18,86 +18,68 @@ contract Campaign {
 
     Submission[] public submissions;
 
-    modifier onlyBrand() {
-        require(msg.sender == brand, "Not brand");
-        _;
-    }
-
-    modifier beforeDeadline() {
-        require(block.timestamp < deadline, "Campaign ended");
-        _;
-    }
-
-    modifier afterDeadline() {
-        require(block.timestamp >= deadline, "Campaign active");
-        _;
-    }
-
-    constructor(uint _duration) payable {
-        require(msg.value > 0, "No funds");
-
+    constructor(uint duration) payable {
+        require(msg.value > 0, "Budget must be greater than 0");
         brand = msg.sender;
-        deadline = block.timestamp + _duration;
+        deadline = block.timestamp + duration;
         totalBudget = msg.value;
-        remainingBudget = msg.value;
     }
 
-    /* ---------- CREATOR ---------- */
-
-    function submit(string memory _link) public beforeDeadline {
+    function submit(string calldata link) external {
+        require(block.timestamp < deadline, "Campaign has ended");
         submissions.push(Submission({
             creator: msg.sender,
-            link: _link,
+            link: link,
             views: 0,
             reward: 0,
             paid: false
         }));
     }
 
-    function getSubmissionsCount() public view returns (uint) {
-        return submissions.length;
-    }
-
-    /* ---------- DISTRIBUTION ---------- */
-
-    // Backend sets views + reward together
-    function setResult(
-        uint index,
-        uint _views,
-        uint _reward
-    ) public onlyBrand afterDeadline {
-
-        require(index < submissions.length, "Invalid index");
-        require(_reward <= remainingBudget, "Budget exceeded");
-
-        Submission storage sub = submissions[index];
-
-        sub.views = _views;
-        sub.reward = _reward;
-    }
-
-    // Pay creator
-    function releasePayment(uint index) public onlyBrand afterDeadline {
+    function setViews(uint index, uint views) external {
+        require(msg.sender == brand, "Only brand can call this");
+        require(block.timestamp >= deadline, "Campaign is still active");
+        require(!resultsFinalized, "Results already finalized");
         require(index < submissions.length, "Invalid index");
 
-        Submission storage sub = submissions[index];
+        submissions[index].views = views;
+        totalViews += views;
+    }
 
+    function finalizeResults() external {
+        require(msg.sender == brand, "Only brand can call this");
+        require(block.timestamp >= deadline, "Campaign is still active");
+        require(!resultsFinalized, "Results already finalized");
+        require(totalViews > 0, "No views recorded");
+
+        uint distributedRewards = 0;
+        
+        for (uint i = 0; i < submissions.length; i++) {
+            uint reward = (submissions[i].views * totalBudget) / totalViews;
+            
+            // Handle dust to distribute ENTIRE budget precisely
+            if (i == submissions.length - 1 && submissions[i].views > 0) {
+                reward = totalBudget - distributedRewards;
+            }
+            
+            submissions[i].reward = reward;
+            distributedRewards += reward;
+        }
+        
+        resultsFinalized = true;
+    }
+
+    function claimReward(uint index) external {
+        require(resultsFinalized, "Results not finalized");
+        require(index < submissions.length, "Invalid index");
+        
+        Submission storage sub = submissions[index];
+        require(msg.sender == sub.creator, "Not the creator");
         require(!sub.paid, "Already paid");
-        require(sub.reward > 0, "Reward not set");
-        require(sub.reward <= remainingBudget, "Insufficient budget");
+        require(sub.reward > 0, "No reward to claim");
 
         sub.paid = true;
-        remainingBudget -= sub.reward;
-
-        payable(sub.creator).transfer(sub.reward);
-    }
-
-    /* ---------- SAFETY ---------- */
-
-    function withdrawRemaining() public onlyBrand afterDeadline {
-        uint amount = remainingBudget;
-        remainingBudget = 0;
-
-        payable(brand).transfer(amount);
+        (bool success, ) = sub.creator.call{value: sub.reward}("");
+        require(success, "Transfer failed");
     }
 }
