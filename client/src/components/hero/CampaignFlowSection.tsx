@@ -296,7 +296,7 @@ function createNodes(activeNodeId: string): FlowCardNode[] {
         title: "42k views",
         description: "Highest reach captures the biggest payout share.",
         footerLabel: "Payout",
-        footerValue: "0.84 ETH",
+        footerValue: "0.84 MON",
         logos: [X_LOGO],
         ...getState("payout-a"),
       },
@@ -312,7 +312,7 @@ function createNodes(activeNodeId: string): FlowCardNode[] {
         title: "28k views",
         description: "Mid-tier performance still earns proportionally.",
         footerLabel: "Payout",
-        footerValue: "0.56 ETH",
+        footerValue: "0.56 MON",
         logos: [X_LOGO],
         ...getState("payout-b"),
       },
@@ -328,7 +328,7 @@ function createNodes(activeNodeId: string): FlowCardNode[] {
         title: "15k views",
         description: "Remaining rewards settle and can be claimed.",
         footerLabel: "Payout",
-        footerValue: "0.30 ETH",
+        footerValue: "0.30 MON",
         logos: [MONAD_LOGO],
         ...getState("payout-c"),
       },
@@ -455,7 +455,9 @@ export function CampaignFlowSection() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.02, duration: 350 }}
+        fitViewOptions={{ padding: 0.11, duration: 350 }}
+        minZoom={0.74}
+        maxZoom={1}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}

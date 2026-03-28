@@ -118,7 +118,7 @@ export function TrustedBySection() {
       <section className="landing-showcase" aria-label="Featured landing showcase">
         <header className="landing-showcase-head">
           <p>Featured work</p>
-          <h2>From inspiration to real campaign creation</h2>
+          <div className="text-5xl font-medium font-['Open_Sans]">From inspiration to real campaign creation</div>
         </header>
 
         <div className="landing-board-shell" aria-live="polite">

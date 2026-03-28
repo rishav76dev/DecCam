@@ -90,8 +90,8 @@ export const appChain = defineChain({
   id: chainId,
   name: chainId === 31337 ? "Local" : "Configured Chain",
   nativeCurrency: {
-    name: "Ether",
-    symbol: "ETH",
+    name: "Monad",
+    symbol: "MON",
     decimals: 18,
   },
   rpcUrls: {

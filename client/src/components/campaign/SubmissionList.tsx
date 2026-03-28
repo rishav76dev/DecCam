@@ -75,7 +75,7 @@ export function SubmissionList({
                 {submissions
                   .reduce((a, s) => a + s.reward, 0)
                   .toFixed(6)}{" "}
-                ETH
+                MON
               </span>
             </div>
           </>

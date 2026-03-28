@@ -44,6 +44,12 @@ type TransactionResponseLike = {
   wait(): Promise<TransactionReceiptLike>;
 };
 
+type SkippedSyncUpdate = {
+  index: number;
+  link: string;
+  reason: string;
+};
+
 type CampaignFactoryContract = {
   getSubmissionCount(campaignId: bigint): Promise<bigint>;
   getSubmission(campaignId: bigint, index: number): Promise<CampaignSubmission>;
@@ -275,13 +281,29 @@ async function handleSyncCampaign(req: Request): Promise<Response> {
       views: number;
       txHash: string;
     }> = [];
+    const skipped: SkippedSyncUpdate[] = [];
 
     console.log(`[/sync-campaign] → campaignId: ${campaignId}`);
     console.log(`[/sync-campaign] → submissions: ${submissionCount}`);
 
+    if (submissionCount === 0) {
+      return json(
+        {
+          success: false,
+          error: `Campaign ${campaignId} has no submissions. Sync skipped.`,
+          campaignId: campaignId.toString(),
+          submissionCount,
+          updates,
+          skipped,
+        },
+        409,
+      );
+    }
+
     for (let index = 0; index < submissionCount; index++) {
       const submission = await campaignFactory.getSubmission(campaignId, index);
       let views = 0;
+      let scrapeFailed = false;
 
       try {
         const result = await scrapeTweet(submission.link, API_KEY);
@@ -294,9 +316,31 @@ async function handleSyncCampaign(req: Request): Promise<Response> {
           scrapeError instanceof Error
             ? scrapeError.message
             : String(scrapeError);
+        scrapeFailed = true;
         console.warn(
-          `[/sync-campaign] [${index}] scrape failed: ${message}. Using 0 views.`,
+          `[/sync-campaign] [${index}] scrape failed: ${message}. Skipping on-chain update.`,
         );
+        skipped.push({
+          index,
+          link: submission.link,
+          reason: `scrape failed: ${message}`,
+        });
+      }
+
+      if (scrapeFailed) {
+        continue;
+      }
+
+      if (views <= 0) {
+        console.log(
+          `[/sync-campaign] [${index}] skipping ${submission.link} because scraped views were 0.`,
+        );
+        skipped.push({
+          index,
+          link: submission.link,
+          reason: "scraped views were 0",
+        });
+        continue;
       }
 
       const tx = await campaignFactory.setViews(campaignId, index, BigInt(views));
@@ -310,6 +354,20 @@ async function handleSyncCampaign(req: Request): Promise<Response> {
       });
     }
 
+    if (updates.length === 0) {
+      return json(
+        {
+          success: false,
+          error: `Campaign ${campaignId} has no non-zero scraped views. Sync skipped.`,
+          campaignId: campaignId.toString(),
+          submissionCount,
+          updates,
+          skipped,
+        },
+        409,
+      );
+    }
+
     const finalizeTx = await campaignFactory.finalizeResults(campaignId);
     const finalizeReceipt = await finalizeTx.wait();
 
@@ -321,6 +379,7 @@ async function handleSyncCampaign(req: Request): Promise<Response> {
       campaignId: campaignId.toString(),
       submissionCount,
       updates,
+      skipped,
       finalizeTxHash: finalizeReceipt.hash,
     });
   } catch (e) {

@@ -10,7 +10,7 @@ interface Props {
 const stats = (p: Props) => [
   { label: "Total Campaigns", value: p.totalCampaigns, icon: Layers, suffix: "" },
   { label: "Active Now", value: p.active, icon: BarChart3, suffix: "" },
-  { label: "Total Budget", value: p.totalBudget.toFixed(2), icon: Coins, suffix: " ETH" },
+  { label: "Total Budget", value: p.totalBudget.toFixed(2), icon: Coins, suffix: " MON" },
   { label: "Submissions", value: p.totalSubmissions, icon: Users, suffix: "" },
 ];
 

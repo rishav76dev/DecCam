@@ -78,7 +78,7 @@ export function CampaignCard({ campaign }: Props) {
         <div className="dash-campaign-meta-row">
           <div className="dash-campaign-meta-item">
             <span>Budget</span>
-            <strong>{campaign.totalBudget} ETH</strong>
+            <strong>{campaign.totalBudget} MON</strong>
           </div>
 
           <div className="dash-campaign-meta-item">

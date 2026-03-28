@@ -110,7 +110,7 @@ export function Dashboard() {
     }
 
     if (!normalizedBudget) {
-      setCreateFeedback("Enter a campaign budget in ETH.");
+      setCreateFeedback("Enter a campaign budget in MON.");
       return;
     }
 
@@ -123,12 +123,12 @@ export function Dashboard() {
     try {
       value = parseEther(normalizedBudget);
     } catch {
-      setCreateFeedback("Budget must be a valid ETH amount.");
+      setCreateFeedback("Budget must be a valid MON amount.");
       return;
     }
 
     if (value <= 0n) {
-      setCreateFeedback("Budget must be greater than 0 ETH.");
+      setCreateFeedback("Budget must be greater than 0 MON.");
       return;
     }
 
@@ -286,7 +286,7 @@ export function Dashboard() {
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "var(--gray-500)" }}>
-                  Budget (ETH)
+                  Budget (MON)
                 </span>
                 <input
                   type="text"

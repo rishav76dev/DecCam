@@ -26,7 +26,7 @@ export function CampaignOverview({ campaign, finalized }: Props) {
   const items = [
     {
       label: "Total Budget",
-      value: `${campaign.totalBudget} ETH`,
+      value: `${campaign.totalBudget} MON`,
       icon: Coins,
       lime: false,
     },
@@ -50,7 +50,7 @@ export function CampaignOverview({ campaign, finalized }: Props) {
     },
     {
       label: "Distributed",
-      value: finalized ? `${distributed.toFixed(4)} ETH` : "—",
+      value: finalized ? `${distributed.toFixed(4)} MON` : "—",
       icon: Zap,
       lime: finalized,
     },

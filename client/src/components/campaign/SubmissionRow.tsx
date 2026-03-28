@@ -10,7 +10,7 @@ interface Props {
 }
 
 const AVATAR_COLORS = [
-  "#b8fe66","#a78bfa","#f59e0b","#38bdf8","#f472b6","#34d399","#fb923c",
+  "#b8fe66", "#a78bfa", "#f59e0b", "#38bdf8", "#f472b6", "#34d399", "#fb923c",
 ];
 
 function avatarColor(address: string) {
@@ -62,7 +62,7 @@ export function SubmissionRow({
       {/* Reward */}
       <td>
         <span className="reward-value">
-          {reward > 0 ? `${reward.toFixed(6)} ETH` : "—"}
+          {reward > 0 ? `${reward.toFixed(6)} MON` : "—"}
         </span>
       </td>
 
