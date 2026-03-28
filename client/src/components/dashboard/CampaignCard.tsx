@@ -31,6 +31,15 @@ function statusLabel(s: Campaign["status"]): string {
   return "Campaign Ended";
 }
 
+function shortDescription(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 120) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, 117)}...`;
+}
+
 interface Props {
   campaign: Campaign;
 }
@@ -38,11 +47,7 @@ interface Props {
 export function CampaignCard({ campaign }: Props) {
   const navigate = useNavigate();
   const totalViews = campaign.totalViews ?? getTotalViews(campaign);
-
-  const shortName =
-    campaign.name.length > 13
-      ? campaign.name.slice(0, 11) + "…"
-      : campaign.name;
+  const totalSubmissions = campaign.submissionCount ?? campaign.submissions.length;
 
   return (
     <div
@@ -52,172 +57,55 @@ export function CampaignCard({ campaign }: Props) {
       onKeyDown={(e) =>
         e.key === "Enter" && navigate(`/dashboard/${campaign.id}`)
       }
-      className="w-full cursor-pointer focus:outline-none"
-      style={{
-        background: "#f5fbe8",
-        border: "1px solid #e4e4e7",
-        borderRadius: 20,
-        padding: "26px",
-        fontFamily: "'DM Sans', sans-serif",
-        backgroundImage:
-          "radial-gradient(circle, rgba(90,160,0,0.10) 1px, transparent 1px)",
-        backgroundSize: "20px 20px",
-      }}
+      className="dash-campaign-card-shell w-full cursor-pointer focus:outline-none"
     >
-      <div className="flex items-start gap-4">
-        {/* LEFT: CAMPAIGN → CATEGORY */}
-        <div className="flex items-start flex-1 min-w-0">
-          {/* Column A */}
-          <div className="flex flex-col shrink-0">
-            <span
-              style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: 28,
-                color: "#111",
-                letterSpacing: "1.5px",
-                lineHeight: 1,
-                textTransform: "uppercase",
-              }}
-            >
-              CAMPAIGN
-            </span>
-            <span
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                color: "#111",
-                marginTop: 10,
-                letterSpacing: "0.4px",
-              }}
-            >
-              {shortName.toUpperCase()}
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: "#aaa",
-                fontWeight: 400,
-                marginTop: 4,
-                fontFamily: "monospace",
-                maxWidth: 140,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {campaign.creatorAddress}
-            </span>
+      <div className="dash-campaign-card">
+        <div className="dash-campaign-card-top">
+          <div className="dash-campaign-card-copy">
+            <p className="dash-campaign-eyebrow">{campaign.category}</p>
+            <h3 className="dash-campaign-title">{campaign.name}</h3>
+            <p className="dash-campaign-description">{shortDescription(campaign.description)}</p>
+            <p className="dash-campaign-creator">{campaign.creatorAddress}</p>
           </div>
 
-          {/* Arrow */}
-          <div
-            style={{
-              padding: "3px 14px 0 14px",
-              color: "#111",
-              fontSize: 26,
-              lineHeight: 1,
-              flexShrink: 0,
-            }}
-          >
-            →
-          </div>
-
-          {/* Column B */}
-          <div className="flex flex-col shrink-0">
-            <span
-              style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: 28,
-                color: "#111",
-                letterSpacing: "1.5px",
-                lineHeight: 1,
-                textTransform: "uppercase",
-              }}
-            >
-              {campaign.category.length > 8
-                ? campaign.category.slice(0, 7).toUpperCase()
-                : campaign.category.toUpperCase()}
-            </span>
-            <span
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                color: "#111",
-                marginTop: 10,
-                letterSpacing: "0.4px",
-              }}
-            >
-              VIEWS
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: "#aaa",
-                fontWeight: 400,
-                marginTop: 4,
-              }}
-            >
-              {fmtViews(totalViews)}
-            </span>
+          <div className="dash-campaign-dots" aria-hidden="true">
+            {Array.from({ length: 42 }).map((_, index) => (
+              <span key={`${campaign.id}-dot-${index}`} />
+            ))}
           </div>
         </div>
 
-        {/* RIGHT PANEL */}
-        <div
-          style={{
-            background: "white",
-            borderRadius: 18,
-            padding: "15px 17px",
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 16,
-            minWidth: 190,
-            flexShrink: 0,
-            border: "1px solid #e4e4e7",
-          }}
-        >
-          <div className="flex flex-col gap-1">
-            <span style={{ fontSize: 17, fontWeight: 600, color: "#111" }}>
-              {campaign.totalBudget} ETH
-            </span>
-            <span style={{ fontSize: 13, color: "#aaa", fontWeight: 400 }}>
-              {(campaign.submissionCount ?? campaign.submissions.length)} Submission
-              {(campaign.submissionCount ?? campaign.submissions.length) !== 1 ? "s" : ""}
-            </span>
-            <span
-              style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: "#111",
-                marginTop: 6,
-              }}
-            >
-              {statusLabel(campaign.status)}
-            </span>
+        <div className="dash-campaign-meta-row">
+          <div className="dash-campaign-meta-item">
+            <span>Budget</span>
+            <strong>{campaign.totalBudget} ETH</strong>
           </div>
 
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(`/dashboard/${campaign.id}`);
-            }}
-            style={{
-              width: 44,
-              height: 44,
-              background: "#1c1c1c",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              border: "none",
-              flexShrink: 0,
-              outline: "none",
-            }}
-          >
-            <ArrowIcon />
-          </button>
+          <div className="dash-campaign-meta-item">
+            <span>Views</span>
+            <strong>{fmtViews(totalViews)}</strong>
+          </div>
+
+          <div className="dash-campaign-meta-item">
+            <span>Submissions</span>
+            <strong>
+              {totalSubmissions} submission{totalSubmissions !== 1 ? "s" : ""}
+            </strong>
+          </div>
+
+          <div className="dash-campaign-status-wrap">
+            <span className="dash-campaign-status">{statusLabel(campaign.status)}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/dashboard/${campaign.id}`);
+              }}
+              className="dash-campaign-open-btn"
+              aria-label={`Open ${campaign.name}`}
+            >
+              <ArrowIcon />
+            </button>
+          </div>
         </div>
       </div>
     </div>

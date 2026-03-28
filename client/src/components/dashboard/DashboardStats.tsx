@@ -18,14 +18,16 @@ export function DashboardStats(props: Props) {
   return (
     <div className="dash-stats">
       {stats(props).map(({ label, value, icon: Icon, suffix }) => (
-        <div key={label} className="dash-stat-card">
-          <div className="dash-stat-icon">
-            <Icon size={18} />
+        <div key={label} className="dash-stat-shell">
+          <div className="dash-stat-card">
+            <div className="dash-stat-icon">
+              <Icon size={18} />
+            </div>
+            <div className="dash-stat-value">
+              {value}{suffix}
+            </div>
+            <div className="dash-stat-label">{label}</div>
           </div>
-          <div className="dash-stat-value">
-            {value}{suffix}
-          </div>
-          <div className="dash-stat-label">{label}</div>
         </div>
       ))}
     </div>

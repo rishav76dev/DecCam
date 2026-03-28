@@ -59,12 +59,14 @@ export function CampaignOverview({ campaign, finalized }: Props) {
   return (
     <div className="overview-stats">
       {items.map(({ label, value, icon: Icon, lime }) => (
-        <div key={label} className="overview-stat">
-          <div className="overview-stat-label">
-            <Icon size={11} style={{ display: "inline", marginRight: 4 }} />
-            {label}
+        <div key={label} className="overview-stat-shell">
+          <div className="overview-stat">
+            <div className="overview-stat-label">
+              <Icon size={11} style={{ display: "inline", marginRight: 4 }} />
+              {label}
+            </div>
+            <div className={`overview-stat-value${lime ? " lime" : ""}`}>{value}</div>
           </div>
-          <div className={`overview-stat-value${lime ? " lime" : ""}`}>{value}</div>
         </div>
       ))}
     </div>
