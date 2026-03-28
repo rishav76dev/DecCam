@@ -2,9 +2,6 @@
 pragma solidity ^0.8.19;
 
 contract CampaignFactory {
-    address public immutable OWNER;
-    address public worker;
-
     struct Submission {
         address creator;
         string link;
@@ -25,21 +22,6 @@ contract CampaignFactory {
     Campaign[] public campaigns;
 
     event CampaignCreated(uint indexed campaignId, address indexed brand, uint deadline, uint budget);
-    event WorkerUpdated(address indexed worker);
-
-    constructor(address initialWorker) {
-        OWNER = msg.sender;
-        worker = initialWorker;
-    }
-
-    modifier onlyOwner() {
-        _onlyOwner();
-        _;
-    }
-
-    function _onlyOwner() internal view {
-        require(msg.sender == OWNER, "Only owner can call this");
-    }
 
     // ---------------------------------------------------------------
     // Create a new campaign — send ETH as the reward budget
@@ -60,14 +42,6 @@ contract CampaignFactory {
     }
 
     // ---------------------------------------------------------------
-    // Owner configures the off-chain worker that pushes scraped views
-    // ---------------------------------------------------------------
-    function setWorker(address newWorker) external onlyOwner {
-        worker = newWorker;
-        emit WorkerUpdated(newWorker);
-    }
-
-    // ---------------------------------------------------------------
     // Creators submit their content link before the deadline
     // ---------------------------------------------------------------
     function submit(uint campaignId, string calldata link) external {
@@ -84,11 +58,10 @@ contract CampaignFactory {
     }
 
     // ---------------------------------------------------------------
-    // Brand records view counts after deadline
+    // Anyone can record view counts after deadline
     // ---------------------------------------------------------------
     function setViews(uint campaignId, uint index, uint views) external {
         Campaign storage c = _get(campaignId);
-        require(_isAuthorizedOperator(c), "Only brand or worker can call this");
         require(block.timestamp >= c.deadline, "Campaign is still active");
         require(!c.resultsFinalized, "Results already finalized");
         require(index < c.submissions.length, "Invalid submission index");
@@ -98,11 +71,10 @@ contract CampaignFactory {
     }
 
     // ---------------------------------------------------------------
-    // Brand finalizes — calculates each creator's share
+    // Anyone can finalize — calculates each creator's share
     // ---------------------------------------------------------------
     function finalizeResults(uint campaignId) external {
         Campaign storage c = _get(campaignId);
-        require(_isAuthorizedOperator(c), "Only brand or worker can call this");
         require(block.timestamp >= c.deadline, "Campaign is still active");
         require(!c.resultsFinalized, "Results already finalized");
         require(c.totalViews > 0, "No views recorded");
@@ -150,13 +122,6 @@ contract CampaignFactory {
 
     function getSubmissionCount(uint campaignId) external view returns (uint) {
         return _get(campaignId).submissions.length;
-    }
-
-    // ---------------------------------------------------------------
-    // Internal helper
-    // ---------------------------------------------------------------
-    function _isAuthorizedOperator(Campaign storage c) internal view returns (bool) {
-        return msg.sender == c.brand || msg.sender == worker;
     }
 
     function _get(uint campaignId) internal view returns (Campaign storage) {
