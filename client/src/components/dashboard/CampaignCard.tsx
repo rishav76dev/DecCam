@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { Campaign } from "@/types";
-import { getTotalViews } from "@/data/mockData";
+import { getTotalViews } from "@/lib/campaigns";
 
 function ArrowIcon() {
   return (
@@ -37,8 +37,8 @@ interface Props {
 
 export function CampaignCard({ campaign }: Props) {
   const navigate = useNavigate();
+  const totalViews = campaign.totalViews ?? getTotalViews(campaign);
 
-  const totalViews = getTotalViews(campaign);
   const shortName =
     campaign.name.length > 13
       ? campaign.name.slice(0, 11) + "…"
@@ -182,8 +182,8 @@ export function CampaignCard({ campaign }: Props) {
               {campaign.totalBudget} ETH
             </span>
             <span style={{ fontSize: 13, color: "#aaa", fontWeight: 400 }}>
-              {campaign.submissions.length} Submission
-              {campaign.submissions.length !== 1 ? "s" : ""}
+              {(campaign.submissionCount ?? campaign.submissions.length)} Submission
+              {(campaign.submissionCount ?? campaign.submissions.length) !== 1 ? "s" : ""}
             </span>
             <span
               style={{

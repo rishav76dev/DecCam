@@ -1,12 +1,26 @@
-import { Shuffle, Lock, CheckCircle } from "lucide-react";
+import { RefreshCw, Lock, CheckCircle } from "lucide-react";
 
 interface Props {
   finalized: boolean;
-  onSimulateViews: () => void;
+  isSyncing?: boolean;
+  disabled?: boolean;
+  syncLabel?: string;
+  helperText?: string;
+  syncDisabledReason?: string;
+  onSyncViews: () => void;
   onFinalize: () => void;
 }
 
-export function ActionBar({ finalized, onSimulateViews, onFinalize }: Props) {
+export function ActionBar({
+  finalized,
+  isSyncing = false,
+  disabled = false,
+  syncLabel = "Sync Views",
+  helperText = "Fetch current X post views from the worker, then finalize the distribution on-chain.",
+  syncDisabledReason,
+  onSyncViews,
+  onFinalize,
+}: Props) {
   return (
     <div className="action-bar">
       <div className="action-bar-left">
@@ -14,7 +28,9 @@ export function ActionBar({ finalized, onSimulateViews, onFinalize }: Props) {
           <>
             <button
               className="btn btn-outline btn-sm"
-              onClick={onSimulateViews}
+              onClick={onSyncViews}
+              disabled={disabled || isSyncing}
+              title={syncDisabledReason}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -26,16 +42,18 @@ export function ActionBar({ finalized, onSimulateViews, onFinalize }: Props) {
                 border: "1.5px solid var(--border)",
                 background: "var(--white)",
                 color: "var(--black)",
-                cursor: "pointer",
+                cursor: disabled || isSyncing ? "not-allowed" : "pointer",
+                opacity: disabled || isSyncing ? 0.6 : 1,
                 transition: "all 150ms",
               }}
             >
-              <Shuffle size={14} />
-              Simulate Fetch Views
+              <RefreshCw size={14} />
+              {isSyncing ? "Syncing..." : syncLabel}
             </button>
 
             <button
               onClick={onFinalize}
+              disabled={disabled || isSyncing}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -47,7 +65,8 @@ export function ActionBar({ finalized, onSimulateViews, onFinalize }: Props) {
                 border: "1.5px solid var(--black)",
                 background: "var(--black)",
                 color: "var(--white)",
-                cursor: "pointer",
+                cursor: disabled || isSyncing ? "not-allowed" : "pointer",
+                opacity: disabled || isSyncing ? 0.6 : 1,
                 transition: "all 150ms",
               }}
             >
@@ -65,7 +84,7 @@ export function ActionBar({ finalized, onSimulateViews, onFinalize }: Props) {
 
       {!finalized && (
         <p className="action-bar-status">
-          Simulate views to auto-fill realistic numbers, then finalize to lock rewards.
+          {syncDisabledReason ?? helperText}
         </p>
       )}
     </div>

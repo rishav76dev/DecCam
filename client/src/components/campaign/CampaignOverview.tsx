@@ -1,6 +1,6 @@
 import { Coins, Clock, Users, Eye, Zap } from "lucide-react";
 import type { Campaign } from "@/types";
-import { getTotalViews, daysUntil } from "@/data/mockData";
+import { daysUntil, getTotalViews } from "@/lib/campaigns";
 
 interface Props {
   campaign: Campaign;
@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function CampaignOverview({ campaign, finalized }: Props) {
-  const totalViews = getTotalViews(campaign);
+  const totalViews = campaign.totalViews ?? getTotalViews(campaign);
   const days = daysUntil(campaign.deadline);
   const distributed = finalized
     ? campaign.submissions.reduce((a, s) => a + s.reward, 0)
@@ -38,7 +38,7 @@ export function CampaignOverview({ campaign, finalized }: Props) {
     },
     {
       label: "Submissions",
-      value: campaign.submissions.length.toString(),
+      value: (campaign.submissionCount ?? campaign.submissions.length).toString(),
       icon: Users,
       lime: false,
     },

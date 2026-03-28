@@ -1,9 +1,14 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { hardhat, mainnet, sepolia } from "wagmi/chains";
+import { fallback, http } from "wagmi";
+import { appChain, rpcUrls } from "@/lib/campaigns";
 
 export const wagmiConfig = getDefaultConfig({
   appName: "Decentralized Campaign",
-  projectId: "YOUR_PROJECT_ID", // Get one at https://cloud.walletconnect.com/
-  chains: [hardhat, mainnet, sepolia],
-  ssr: false, // Vite React is usually SPA
+  projectId:
+    import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "YOUR_PROJECT_ID",
+  chains: [appChain],
+  transports: {
+    [appChain.id]: fallback(rpcUrls.map((url) => http(url, { timeout: 10_000 }))),
+  },
+  ssr: false,
 });

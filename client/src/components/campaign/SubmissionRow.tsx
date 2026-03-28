@@ -5,8 +5,8 @@ interface Props {
   submission: Submission;
   reward: number;
   finalized: boolean;
-  onViewsChange: (id: string, views: number) => void;
   onClaim: (id: string) => void;
+  claimPending?: boolean;
 }
 
 const AVATAR_COLORS = [
@@ -18,9 +18,16 @@ function avatarColor(address: string) {
   return AVATAR_COLORS[code % AVATAR_COLORS.length];
 }
 
-export function SubmissionRow({ submission, reward, finalized, onViewsChange, onClaim }: Props) {
+export function SubmissionRow({
+  submission,
+  reward,
+  finalized,
+  onClaim,
+  claimPending = false,
+}: Props) {
   const initials = submission.creator.slice(2, 4).toUpperCase();
   const bg = avatarColor(submission.creator);
+  const displayedViews = submission.previewViews ?? submission.views;
 
   return (
     <tr>
@@ -50,16 +57,7 @@ export function SubmissionRow({ submission, reward, finalized, onViewsChange, on
 
       {/* Views input */}
       <td>
-        <input
-          type="number"
-          className="views-input"
-          value={submission.views}
-          disabled={finalized}
-          min={0}
-          onChange={(e) =>
-            onViewsChange(submission.id, Math.max(0, parseInt(e.target.value) || 0))
-          }
-        />
+        <span className="reward-value">{displayedViews.toLocaleString()}</span>
       </td>
 
       {/* Reward */}
@@ -79,9 +77,10 @@ export function SubmissionRow({ submission, reward, finalized, onViewsChange, on
           ) : (
             <button
               className="claim-btn claim-btn-ready"
+              disabled={claimPending}
               onClick={() => onClaim(submission.id)}
             >
-              Claim Reward
+              {claimPending ? "Claiming..." : "Claim Reward"}
             </button>
           )
         ) : (

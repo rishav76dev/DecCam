@@ -1,12 +1,20 @@
-import { useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, ExternalLink } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAccount, useWalletClient } from "wagmi";
 import { Navbar } from "@/components/Navbar";
 import { CampaignOverview } from "@/components/campaign/CampaignOverview";
 import { ActionBar } from "@/components/campaign/ActionBar";
 import { SubmissionList } from "@/components/campaign/SubmissionList";
 import { AddSubmissionForm } from "@/components/campaign/AddSubmissionForm";
-import { MOCK_CAMPAIGNS } from "@/data/mockData";
+import {
+  campaignFactoryAbi,
+  contractAddress,
+  publicClient,
+  useCampaignDetail,
+  workerBaseUrl,
+} from "@/lib/campaigns";
 import type { Submission } from "@/types";
 
 function StatusBadge({ status }: { status: string }) {
@@ -37,83 +45,210 @@ function StatusBadge({ status }: { status: string }) {
 
 export function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>();
-  const base = MOCK_CAMPAIGNS.find((c) => c.id === campaignId);
+  const parsedCampaignId =
+    campaignId && /^\d+$/.test(campaignId) ? Number(campaignId) : null;
+  const { data: walletClient } = useWalletClient();
+  const { isConnected, chainId } = useAccount();
+  const queryClient = useQueryClient();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [claimPendingId, setClaimPendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const hasAutoSyncedRef = useRef(false);
+  const [previewViewsById, setPreviewViewsById] = useState<Record<string, number>>({});
+  const {
+    data: campaign,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCampaignDetail(parsedCampaignId);
 
-  // ── Local state (UI only, no blockchain) ──────────────────────
-  const [submissions, setSubmissions] = useState<Submission[]>(
-    base?.submissions ?? [],
-  );
-  const [finalized, setFinalized] = useState(base?.status === "finalized");
+  async function refreshCampaign() {
+    await refetch();
+    await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+  }
 
-  // ── Handlers ──────────────────────────────────────────────────
-
-  /** Update views for a single submission */
-  const handleViewsChange = useCallback((id: string, views: number) => {
-    setSubmissions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, views } : s)),
-    );
-  }, []);
-
-  /** Fill random realistic view counts */
-  const handleSimulateViews = useCallback(() => {
-    setSubmissions((prev) =>
-      prev.map((s) => ({
-        ...s,
-        views: Math.floor(Math.random() * 48_000) + 2_000,
-      })),
-    );
-  }, []);
-
-  /** Lock the distribution */
-  const handleFinalize = useCallback(() => {
-    const totalViews = submissions.reduce((a, s) => a + s.views, 0);
-    if (totalViews === 0) {
-      alert("Simulate or enter views before finalizing.");
+  async function handleSyncViews() {
+    if (parsedCampaignId === null) {
       return;
     }
-    setSubmissions((prev) =>
-      prev.map((s) => ({
-        ...s,
-        reward:
-          totalViews > 0
-            ? Number(((s.views / totalViews) * (base?.totalBudget ?? 0)).toFixed(6))
-            : 0,
-      })),
-    );
-    setFinalized(true);
-  }, [submissions, base?.totalBudget]);
 
-  /** Toggle claimed state for a creator */
-  const handleClaim = useCallback((id: string) => {
-    setSubmissions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, claimed: true } : s)),
-    );
-  }, []);
+    setActionError(null);
+    setIsSyncing(true);
 
-  /** Add a new submission */
-  const handleAddSubmission = useCallback(
-    (tweetLink: string, creatorFull: string) => {
-      const short =
-        creatorFull.length > 12
-          ? `${creatorFull.slice(0, 6)}…${creatorFull.slice(-4)}`
-          : creatorFull;
-      const newSub: Submission = {
-        id: `sub-${Date.now()}`,
-        creator: short,
-        creatorFull,
-        tweetLink,
-        views: 0,
-        reward: 0,
-        claimed: false,
-        submittedAt: new Date().toISOString(),
-      };
-      setSubmissions((prev) => [...prev, newSub]);
-    },
-    [],
-  );
+    try {
+      const res = await fetch(`${workerBaseUrl}/sync-campaign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ campaignId: parsedCampaignId }),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Worker sync failed with status ${res.status}`);
+      }
+
+      await refreshCampaign();
+    } catch (syncError) {
+      setActionError(
+        syncError instanceof Error ? syncError.message : String(syncError),
+      );
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!campaign || isSyncing) {
+      return;
+    }
+
+    const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
+    const shouldAutoSync = !finalized && campaign.status !== "active";
+
+    if (!shouldAutoSync || hasAutoSyncedRef.current) {
+      return;
+    }
+
+    hasAutoSyncedRef.current = true;
+    void handleSyncViews();
+  }, [campaign, isSyncing]);
+
+  useEffect(() => {
+    if (!campaign || campaign.status !== "active" || campaign.submissions.length === 0) {
+      setPreviewViewsById({});
+      return;
+    }
+
+    const activeCampaign = campaign;
+    let cancelled = false;
+
+    async function loadPreviewViews() {
+      try {
+        const res = await fetch(`${workerBaseUrl}/scrape-batch`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tweetIds: activeCampaign.submissions.map((submission) => submission.tweetLink),
+          }),
+        });
+
+        const data = (await res.json().catch(() => null)) as
+          | { results?: Array<{ views?: number; error?: string }> }
+          | null;
+
+        if (!res.ok || !data?.results) {
+          return;
+        }
+
+        const nextPreviewViews = activeCampaign.submissions.reduce<Record<string, number>>(
+          (acc, submission, index) => {
+            const outcome = data.results?.[index];
+            if (typeof outcome?.views === "number") {
+              acc[submission.id] = outcome.views;
+            }
+            return acc;
+          },
+          {},
+        );
+
+        if (!cancelled) {
+          setPreviewViewsById(nextPreviewViews);
+        }
+      } catch {
+        if (!cancelled) {
+          setPreviewViewsById({});
+        }
+      }
+    }
+
+    void loadPreviewViews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [campaign]);
+
+  async function handleFinalize() {
+    await handleSyncViews();
+  }
+
+  async function handleClaim(id: string) {
+    if (!walletClient || !contractAddress || parsedCampaignId === null || !campaign) {
+      setActionError("Connect a wallet before claiming rewards.");
+      return;
+    }
+
+    const submission = campaign.submissions.find((item) => item.id === id);
+
+    if (!submission) {
+      return;
+    }
+
+    setActionError(null);
+    setClaimPendingId(id);
+
+    try {
+      const hash = await walletClient.writeContract({
+        address: contractAddress,
+        abi: campaignFactoryAbi,
+        functionName: "claimReward",
+        args: [BigInt(parsedCampaignId), BigInt(submission.contractIndex ?? 0)],
+        account: walletClient.account,
+        chain: walletClient.chain,
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash });
+      await refreshCampaign();
+    } catch (claimError) {
+      setActionError(
+        claimError instanceof Error ? claimError.message : String(claimError),
+      );
+    } finally {
+      setClaimPendingId(null);
+    }
+  }
+
+  async function handleAddSubmission(tweetLink: string) {
+    if (!walletClient || !contractAddress || parsedCampaignId === null) {
+      setActionError("Connect a wallet before submitting a post.");
+      return;
+    }
+
+    setActionError(null);
+    setIsSubmitting(true);
+
+    try {
+      const hash = await walletClient.writeContract({
+        address: contractAddress,
+        abi: campaignFactoryAbi,
+        functionName: "submit",
+        args: [BigInt(parsedCampaignId), tweetLink],
+        account: walletClient.account,
+        chain: walletClient.chain,
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash });
+      await refreshCampaign();
+    } catch (submitError) {
+      setActionError(
+        submitError instanceof Error ? submitError.message : String(submitError),
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   // ── Not found ─────────────────────────────────────────────────
-  if (!base) {
+  if (parsedCampaignId === null) {
     return (
       <div className="detail-page">
         <Navbar />
@@ -138,6 +273,77 @@ export function CampaignDetail() {
     );
   }
 
+  if (!contractAddress) {
+    return (
+      <div className="detail-page">
+        <Navbar />
+        <div
+          style={{
+            textAlign: "center",
+            padding: "120px 24px",
+            color: "var(--gray-500)",
+          }}
+        >
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--black)", marginBottom: 8 }}>
+            Contract not configured
+          </h2>
+          <p style={{ marginBottom: 24 }}>
+            Set <code>VITE_CONTRACT_ADDRESS</code> and <code>VITE_RPC_URL</code> to load campaign details.
+          </p>
+          <Link to="/dashboard" className="btn-pill-black" style={{ display: "inline-flex" }}>
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="detail-page">
+        <Navbar />
+        <div style={{ textAlign: "center", padding: "120px 24px", color: "var(--gray-500)" }}>
+          Loading campaign from chain...
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="detail-page">
+        <Navbar />
+        <div style={{ textAlign: "center", padding: "120px 24px", color: "#ef4444" }}>
+          Failed to load campaign: {error instanceof Error ? error.message : String(error)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!campaign) {
+    return null;
+  }
+
+  const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
+  const syncDisabledReason = finalized
+    ? undefined
+    : campaign.status === "active"
+      ? "Views can only be synced after the campaign deadline."
+      : actionError ?? undefined;
+  const addSubmissionDisabled = finalized || campaign.status === "closed";
+  const displayedSubmissions: Submission[] = campaign.submissions.map((submission) => ({
+    ...submission,
+    previewViews:
+      campaign.status === "active"
+        ? previewViewsById[submission.id] ?? submission.previewViews
+        : undefined,
+  }));
+  const submitHint = !isConnected
+    ? "Connect a wallet to submit your post on-chain."
+    : chainId !== walletClient?.chain?.id
+      ? "Switch your wallet to the configured campaign chain before submitting."
+      : "Submitting writes directly to the contract. The creator address comes from your wallet.";
+
   return (
     <div className="detail-page">
       <Navbar />
@@ -158,12 +364,12 @@ export function CampaignDetail() {
                     width: 10,
                     height: 10,
                     borderRadius: "50%",
-                    background: base.coverGradient,
+                    background: campaign.coverGradient,
                     flexShrink: 0,
                   }}
                 />
-                <h1 className="detail-title">{base.name}</h1>
-                <StatusBadge status={finalized ? "finalized" : base.status} />
+                <h1 className="detail-title">{campaign.name}</h1>
+                <StatusBadge status={finalized ? "finalized" : campaign.status} />
                 <span
                   style={{
                     fontSize: 11,
@@ -174,12 +380,12 @@ export function CampaignDetail() {
                     color: "var(--gray-500)",
                   }}
                 >
-                  {base.category}
+                  {campaign.category}
                 </span>
               </div>
               <p className="detail-creator">
-                Created by {base.creatorAddress} ·{" "}
-                {new Date(base.deadline).toLocaleDateString("en-US", {
+                Created by {campaign.creatorAddress} ·{" "}
+                {new Date(campaign.deadline).toLocaleDateString("en-US", {
                   month: "long",
                   day: "numeric",
                   year: "numeric",
@@ -215,7 +421,7 @@ export function CampaignDetail() {
               marginTop: 12,
             }}
           >
-            {base.description}
+            {campaign.description}
           </p>
         </div>
       </div>
@@ -223,32 +429,48 @@ export function CampaignDetail() {
       {/* Body */}
       <div className="detail-body">
         {/* Overview stats */}
-        <CampaignOverview
-          campaign={{ ...base, submissions }}
-          finalized={finalized}
-        />
+        <CampaignOverview campaign={campaign} finalized={finalized} />
 
         {/* Action bar */}
-        {base.status !== "closed" && (
+        {!finalized && (
           <ActionBar
             finalized={finalized}
-            onSimulateViews={handleSimulateViews}
+            isSyncing={isSyncing}
+            disabled={campaign.status === "active"}
+            syncDisabledReason={syncDisabledReason}
+            onSyncViews={handleSyncViews}
             onFinalize={handleFinalize}
           />
         )}
 
+        {actionError && (
+          <div
+            style={{
+              color: "#ef4444",
+              fontSize: 13,
+              background: "rgba(239, 68, 68, 0.08)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              padding: "12px 14px",
+              borderRadius: 12,
+            }}
+          >
+            {actionError}
+          </div>
+        )}
+
         {/* Submissions list */}
         <SubmissionList
-          submissions={submissions}
-          totalBudget={base.totalBudget}
+          submissions={displayedSubmissions}
           finalized={finalized}
-          onViewsChange={handleViewsChange}
           onClaim={handleClaim}
+          claimPendingId={claimPendingId}
         />
 
         {/* Add submission form */}
         <AddSubmissionForm
-          disabled={finalized || base.status === "closed"}
+          disabled={addSubmissionDisabled}
+          submitting={isSubmitting}
+          submitHint={submitHint}
           onAdd={handleAddSubmission}
         />
       </div>

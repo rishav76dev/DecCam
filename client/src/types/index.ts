@@ -16,19 +16,24 @@ export type CampaignCategory =
 // ── Submission ────────────────────────────────────────────────
 export interface Submission {
   id: string;
+  contractIndex?: number;
   /** Shortened wallet address, e.g. "0x1a2b…3c4d" */
   creator: string;
   /** Full wallet address for display */
   creatorFull: string;
   /** Twitter / X post URL */
   tweetLink: string;
-  /** Raw view count — editable in the UI */
+  /** Raw view count from the contract / worker sync */
   views: number;
-  /** Calculated on the fly: (views / totalViews) * totalBudget */
+  /** Off-chain preview views fetched from the worker before on-chain finalization */
+  previewViews?: number;
+  /** Reward value in ETH */
   reward: number;
-  /** Whether this creator has claimed their reward (UI state only) */
+  /** Reward value in wei */
+  rewardWei?: bigint;
+  /** Whether this creator has claimed their reward */
   claimed: boolean;
-  /** ISO timestamp when the submission was added */
+  /** ISO timestamp when the submission was added, if available off-chain */
   submittedAt: string;
 }
 
@@ -40,13 +45,23 @@ export interface Campaign {
   category: CampaignCategory;
   /** Total reward pool in ETH */
   totalBudget: number;
+  /** Total reward pool in wei */
+  totalBudgetWei?: bigint;
   /** ISO date string, e.g. "2025-09-15" */
   deadline: string;
+  /** Unix timestamp in seconds */
+  deadlineUnix?: number;
   status: CampaignStatus;
   /** Address of the brand / campaign creator */
   creatorAddress: string;
   /** CSS gradient string used as the card cover accent */
   coverGradient: string;
+  /** Total aggregated views recorded on-chain */
+  totalViews?: number;
+  /** Whether results were finalized on-chain */
+  resultsFinalized?: boolean;
+  /** Number of submissions, even when submissions are not loaded */
+  submissionCount?: number;
   submissions: Submission[];
 }
 

@@ -3,12 +3,18 @@ import { Plus, Link2 } from "lucide-react";
 
 interface Props {
   disabled: boolean;
-  onAdd: (tweetLink: string, creatorAddress: string) => void;
+  submitting?: boolean;
+  submitHint?: string;
+  onAdd: (tweetLink: string) => void;
 }
 
-export function AddSubmissionForm({ disabled, onAdd }: Props) {
+export function AddSubmissionForm({
+  disabled,
+  submitting = false,
+  submitHint,
+  onAdd,
+}: Props) {
   const [link, setLink] = useState("");
-  const [addr, setAddr] = useState("");
   const [error, setError] = useState("");
 
   function handleSubmit(e: React.FormEvent) {
@@ -24,9 +30,8 @@ export function AddSubmissionForm({ disabled, onAdd }: Props) {
       return;
     }
 
-    onAdd(link.trim(), addr.trim() || "0x" + Math.random().toString(16).slice(2, 12) + "…" + Math.random().toString(16).slice(2, 6));
+    onAdd(link.trim());
     setLink("");
-    setAddr("");
   }
 
   return (
@@ -44,21 +49,12 @@ export function AddSubmissionForm({ disabled, onAdd }: Props) {
             placeholder="https://x.com/user/status/..."
             value={link}
             onChange={(e) => setLink(e.target.value)}
-            disabled={disabled}
-            style={{ flex: 2 }}
-          />
-          <input
-            type="text"
-            className="input"
-            placeholder="Creator address (optional)"
-            value={addr}
-            onChange={(e) => setAddr(e.target.value)}
-            disabled={disabled}
+            disabled={disabled || submitting}
             style={{ flex: 1 }}
           />
           <button
             type="submit"
-            disabled={disabled}
+            disabled={disabled || submitting}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -70,19 +66,24 @@ export function AddSubmissionForm({ disabled, onAdd }: Props) {
               border: "none",
               background: "var(--black)",
               color: "var(--white)",
-              cursor: disabled ? "not-allowed" : "pointer",
-              opacity: disabled ? 0.5 : 1,
+              cursor: disabled || submitting ? "not-allowed" : "pointer",
+              opacity: disabled || submitting ? 0.5 : 1,
               whiteSpace: "nowrap",
               height: 40,
               flexShrink: 0,
             }}
           >
             <Plus size={14} />
-            Add
+            {submitting ? "Submitting..." : "Add"}
           </button>
         </div>
         {error && (
           <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8 }}>{error}</p>
+        )}
+        {!error && submitHint && (
+          <p style={{ fontSize: 12, color: "var(--gray-500)", marginTop: 8 }}>
+            {submitHint}
+          </p>
         )}
         {disabled && (
           <p style={{ fontSize: 12, color: "var(--gray-400)", marginTop: 8 }}>

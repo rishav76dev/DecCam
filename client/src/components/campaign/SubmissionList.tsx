@@ -3,25 +3,21 @@ import { SubmissionRow } from "./SubmissionRow";
 
 interface Props {
   submissions: Submission[];
-  totalBudget: number;
   finalized: boolean;
-  onViewsChange: (id: string, views: number) => void;
   onClaim: (id: string) => void;
+  claimPendingId?: string | null;
 }
 
 export function SubmissionList({
   submissions,
-  totalBudget,
   finalized,
-  onViewsChange,
   onClaim,
+  claimPendingId,
 }: Props) {
-  const totalViews = submissions.reduce((a, s) => a + s.views, 0);
-
-  function calcReward(views: number) {
-    if (totalViews === 0) return 0;
-    return (views / totalViews) * totalBudget;
-  }
+  const totalViews = submissions.reduce(
+    (a, s) => a + (s.previewViews ?? s.views),
+    0,
+  );
 
   return (
     <div className="submissions-panel">
@@ -62,10 +58,10 @@ export function SubmissionList({
                 <SubmissionRow
                   key={s.id}
                   submission={s}
-                  reward={calcReward(s.views)}
+                  reward={s.reward}
                   finalized={finalized}
-                  onViewsChange={onViewsChange}
                   onClaim={onClaim}
+                  claimPending={claimPendingId === s.id}
                 />
               ))}
             </tbody>
@@ -74,12 +70,12 @@ export function SubmissionList({
           {/* Totals row */}
           <div className="submissions-total-row">
             <span className="submissions-total-label">
-              Budget allocated: {totalBudget} ETH
+              Total views: {totalViews.toLocaleString()}
             </span>
             <span className="submissions-total-label">
               Distributed:{" "}
               {submissions
-                .reduce((a, s) => a + calcReward(s.views), 0)
+                .reduce((a, s) => a + s.reward, 0)
                 .toFixed(6)}{" "}
               ETH
             </span>
