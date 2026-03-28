@@ -1,29 +1,20 @@
-import { useAccount } from 'wagmi'
-import { Navbar } from './components/Navbar'
-import './App.css'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Home } from "@/pages/Home";
+import { Dashboard } from "@/pages/Dashboard";
+import { CampaignDetail } from "@/pages/CampaignDetail";
 
 function App() {
-  const { address, isConnected } = useAccount()
-
   return (
-    <div>
-      <Navbar />
-      <main style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <h1>Welcome to Web3 Campaign</h1>
-        
-        {isConnected ? (
-          <div style={{ marginTop: '20px', padding: '20px', backgroundColor: '#f0f0f0', color: 'black', borderRadius: '10px' }}>
-            <h2>Connected Successfully!</h2>
-            <p>Address: <span style={{ fontFamily: 'monospace' }}>{address}</span></p>
-          </div>
-        ) : (
-          <div style={{ marginTop: '20px', padding: '20px', backgroundColor: '#f0f0f0', color: 'black', borderRadius: '10px' }}>
-            <p>Please connect your wallet using the button in the top right.</p>
-          </div>
-        )}
-      </main>
-    </div>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard/:campaignId" element={<CampaignDetail />} />
+        {/* Catch-all → home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;
