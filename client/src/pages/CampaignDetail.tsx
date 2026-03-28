@@ -386,6 +386,12 @@ export function CampaignDetail() {
     return null;
   }
 
+  const isLocalWorkerUrl =
+    workerBaseUrl.includes("localhost") || workerBaseUrl.includes("127.0.0.1");
+  const offlineWorkerMessage = isLocalWorkerUrl
+    ? `Worker is offline at ${workerBaseUrl}. Start worker/bun dev in the worker folder.`
+    : `Worker is offline at ${workerBaseUrl}. Check the deployed worker service and VITE_WORKER_URL.`;
+
   const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
   const deadlineMs = campaign.deadlineUnix
     ? campaign.deadlineUnix * 1000
@@ -396,7 +402,7 @@ export function CampaignDetail() {
   const syncDisabledReason = finalized
     ? undefined
     : !workerReachable
-      ? `Worker is offline at ${workerBaseUrl}. Start worker/bun dev in the worker folder.`
+      ? offlineWorkerMessage
       : actionError ?? undefined;
   const addSubmissionDisabled = finalized || campaign.status === "closed";
   const displayedSubmissions: Submission[] = campaign.submissions.map((submission) => {

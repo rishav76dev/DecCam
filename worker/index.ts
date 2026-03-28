@@ -432,10 +432,13 @@ const server = Bun.serve({
   fetch: router,
 });
 
+const listenHost = server.hostname || "0.0.0.0";
+const publicRenderUrl = process.env.RENDER_EXTERNAL_URL;
+
 console.log(`
 ╭─────────────────────────────────────────╮
 │   DecCampaign Worker                    │
-│   Listening on http://localhost:${PORT}    │
+│   Listening on http://${listenHost}:${PORT}    │
 │                                         │
 │   GET  /health                          │
 │   POST /scrape          (single tweet)  │
@@ -443,3 +446,7 @@ console.log(`
 │   POST /sync-campaign   (on-chain sync) │
 ╰─────────────────────────────────────────╯
 `);
+
+if (publicRenderUrl) {
+  console.log(`[worker] Public URL: ${publicRenderUrl}`);
+}
