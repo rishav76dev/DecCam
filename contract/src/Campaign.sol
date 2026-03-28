@@ -18,6 +18,11 @@ contract Campaign {
 
     Submission[] public submissions;
 
+    modifier onlyBrand() {
+        require(msg.sender == brand, "Only brand can call this");
+        _;
+    }
+
     constructor(uint duration) payable {
         require(msg.value > 0, "Budget must be greater than 0");
         brand = msg.sender;
@@ -27,6 +32,7 @@ contract Campaign {
 
     function submit(string calldata link) external {
         require(block.timestamp < deadline, "Campaign has ended");
+        
         submissions.push(Submission({
             creator: msg.sender,
             link: link,
@@ -36,50 +42,39 @@ contract Campaign {
         }));
     }
 
-    function setViews(uint index, uint views) external {
-        require(msg.sender == brand, "Only brand can call this");
+    function setViews(uint index, uint views) external onlyBrand {
         require(block.timestamp >= deadline, "Campaign is still active");
         require(!resultsFinalized, "Results already finalized");
-        require(index < submissions.length, "Invalid index");
+        require(index < submissions.length, "Invalid submission index");
 
         submissions[index].views = views;
         totalViews += views;
     }
 
-    function finalizeResults() external {
-        require(msg.sender == brand, "Only brand can call this");
+    function finalizeResults() external onlyBrand {
         require(block.timestamp >= deadline, "Campaign is still active");
         require(!resultsFinalized, "Results already finalized");
         require(totalViews > 0, "No views recorded");
 
-        uint distributedRewards = 0;
-        
         for (uint i = 0; i < submissions.length; i++) {
-            uint reward = (submissions[i].views * totalBudget) / totalViews;
-            
-            // Handle dust to distribute ENTIRE budget precisely
-            if (i == submissions.length - 1 && submissions[i].views > 0) {
-                reward = totalBudget - distributedRewards;
-            }
-            
-            submissions[i].reward = reward;
-            distributedRewards += reward;
+            submissions[i].reward = (submissions[i].views * totalBudget) / totalViews;
         }
-        
+
         resultsFinalized = true;
     }
 
     function claimReward(uint index) external {
-        require(resultsFinalized, "Results not finalized");
-        require(index < submissions.length, "Invalid index");
+        require(resultsFinalized, "Results not finalized yet");
+        require(index < submissions.length, "Invalid submission index");
         
         Submission storage sub = submissions[index];
-        require(msg.sender == sub.creator, "Not the creator");
-        require(!sub.paid, "Already paid");
+        require(msg.sender == sub.creator, "Only creator can claim");
+        require(!sub.paid, "Reward already claimed");
         require(sub.reward > 0, "No reward to claim");
 
         sub.paid = true;
-        (bool success, ) = sub.creator.call{value: sub.reward}("");
+        (bool success, ) = payable(sub.creator).call{value: sub.reward}("");
         require(success, "Transfer failed");
     }
 }
+
