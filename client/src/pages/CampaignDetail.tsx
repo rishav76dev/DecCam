@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccount, useWalletClient } from "wagmi";
 import { Navbar } from "@/components/Navbar";
@@ -54,6 +54,10 @@ export function CampaignDetail() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [claimPendingId, setClaimPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionInfo, setActionInfo] = useState<string | null>(null);
+  const [previewViewsByIndex, setPreviewViewsByIndex] = useState<Record<number, number>>({});
+  const [workerReachable, setWorkerReachable] = useState(true);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const hasAutoSyncedRef = useRef(false);
   const {
     data: campaign,
@@ -69,14 +73,88 @@ export function CampaignDetail() {
   }
 
   async function handleSyncViews() {
-    if (parsedCampaignId === null) {
+    if (parsedCampaignId === null || !campaign) {
+      return;
+    }
+
+    if (!workerReachable) {
+      setActionError(
+        `Worker is offline at ${workerBaseUrl}. Start the worker and try syncing again.`,
+      );
+      setActionInfo(null);
       return;
     }
 
     setActionError(null);
+    setActionInfo(null);
     setIsSyncing(true);
 
     try {
+      const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
+      const deadlineMs = campaign.deadlineUnix
+        ? campaign.deadlineUnix * 1000
+        : new Date(campaign.deadline).getTime();
+      const isPastDeadline = Number.isFinite(deadlineMs)
+        ? Date.now() >= deadlineMs
+        : true;
+      const isActiveNow = !finalized && !isPastDeadline;
+
+      if (isActiveNow) {
+        if (campaign.submissions.length === 0) {
+          setActionInfo("No submissions yet to preview-sync.");
+          return;
+        }
+
+        const scrapeRes = await fetch(`${workerBaseUrl}/scrape-batch`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tweetIds: campaign.submissions.map((submission) => submission.tweetLink),
+          }),
+        });
+
+        const scrapeData = (await scrapeRes.json().catch(() => null)) as
+          | {
+              error?: string;
+              results?: Array<
+                | { views?: number; error?: string }
+                | null
+                | undefined
+              >;
+            }
+          | null;
+
+        if (!scrapeRes.ok || !scrapeData?.results) {
+          throw new Error(
+            scrapeData?.error ??
+              `Worker preview sync failed with status ${scrapeRes.status}`,
+          );
+        }
+
+        const nextPreviewViews: Record<number, number> = {};
+
+        scrapeData.results.forEach((result, index) => {
+          const contractIndex = campaign.submissions[index]?.contractIndex;
+
+          if (
+            typeof contractIndex === "number" &&
+            result &&
+            typeof result.views === "number" &&
+            result.views >= 0
+          ) {
+            nextPreviewViews[contractIndex] = result.views;
+          }
+        });
+
+        setPreviewViewsByIndex(nextPreviewViews);
+        setActionInfo(
+          "Preview sync completed. Values shown are live worker estimates and not written on-chain until campaign ends.",
+        );
+        return;
+      }
+
       const res = await fetch(`${workerBaseUrl}/sync-campaign`, {
         method: "POST",
         headers: {
@@ -93,15 +171,53 @@ export function CampaignDetail() {
         throw new Error(data?.error ?? `Worker sync failed with status ${res.status}`);
       }
 
+      setPreviewViewsByIndex({});
+      setActionInfo("On-chain sync complete.");
       await refreshCampaign();
     } catch (syncError) {
       setActionError(
         syncError instanceof Error ? syncError.message : String(syncError),
       );
+      setActionInfo(null);
     } finally {
       setIsSyncing(false);
     }
   }
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkWorkerHealth() {
+      try {
+        const res = await fetch(`${workerBaseUrl}/health`, { method: "GET" });
+        if (!cancelled) {
+          setWorkerReachable(res.ok);
+        }
+      } catch {
+        if (!cancelled) {
+          setWorkerReachable(false);
+        }
+      }
+    }
+
+    void checkWorkerHealth();
+    const healthTimer = window.setInterval(() => {
+      void checkWorkerHealth();
+    }, 15_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(healthTimer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!campaign || isSyncing) {
@@ -109,7 +225,11 @@ export function CampaignDetail() {
     }
 
     const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
-    const shouldAutoSync = !finalized && campaign.status !== "active";
+    const deadlineMs = campaign.deadlineUnix
+      ? campaign.deadlineUnix * 1000
+      : new Date(campaign.deadline).getTime();
+    const isPastDeadline = Number.isFinite(deadlineMs) ? nowMs >= deadlineMs : true;
+    const shouldAutoSync = !finalized && isPastDeadline;
 
     if (!shouldAutoSync || hasAutoSyncedRef.current) {
       return;
@@ -117,7 +237,7 @@ export function CampaignDetail() {
 
     hasAutoSyncedRef.current = true;
     void handleSyncViews();
-  }, [campaign, isSyncing]);
+  }, [campaign, isSyncing, nowMs]);
 
   async function handleFinalize() {
     await handleSyncViews();
@@ -267,13 +387,42 @@ export function CampaignDetail() {
   }
 
   const finalized = campaign.resultsFinalized ?? campaign.status === "finalized";
+  const deadlineMs = campaign.deadlineUnix
+    ? campaign.deadlineUnix * 1000
+    : new Date(campaign.deadline).getTime();
+  const isPastDeadline = Number.isFinite(deadlineMs) ? nowMs >= deadlineMs : true;
+  const isActiveNow = !finalized && !isPastDeadline;
+  const syncBlocked = !workerReachable;
   const syncDisabledReason = finalized
     ? undefined
-    : campaign.status === "active"
-      ? "Views can only be synced after the campaign deadline."
+    : !workerReachable
+      ? `Worker is offline at ${workerBaseUrl}. Start worker/bun dev in the worker folder.`
       : actionError ?? undefined;
   const addSubmissionDisabled = finalized || campaign.status === "closed";
-  const displayedSubmissions: Submission[] = campaign.submissions;
+  const displayedSubmissions: Submission[] = campaign.submissions.map((submission) => {
+    const index = submission.contractIndex;
+    const previewViews =
+      typeof index === "number" ? previewViewsByIndex[index] : undefined;
+
+    if (typeof previewViews !== "number") {
+      return submission;
+    }
+
+    return {
+      ...submission,
+      views: previewViews,
+    };
+  });
+  const displayTotalViews = displayedSubmissions.reduce(
+    (sum, submission) => sum + submission.views,
+    0,
+  );
+  const displayCampaign = {
+    ...campaign,
+    submissions: displayedSubmissions,
+    totalViews:
+      Object.keys(previewViewsByIndex).length > 0 ? displayTotalViews : campaign.totalViews,
+  };
   const submitHint = !isConnected
     ? "Connect a wallet to submit your post on-chain."
     : chainId !== walletClient?.chain?.id
@@ -305,7 +454,7 @@ export function CampaignDetail() {
                   }}
                 />
                 <h1 className="detail-title">{campaign.name}</h1>
-                <StatusBadge status={finalized ? "finalized" : campaign.status} />
+                <StatusBadge status={finalized ? "finalized" : isActiveNow ? "active" : "closed"} />
                 <span
                   style={{
                     fontSize: 11,
@@ -345,6 +494,32 @@ export function CampaignDetail() {
             >
               <ExternalLink size={13} /> View on X
             </a>
+
+            {!finalized && (
+              <button
+                onClick={handleSyncViews}
+                disabled={syncBlocked || isSyncing}
+                title={syncDisabledReason}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1.5px solid var(--border)",
+                  background: "var(--white)",
+                  color: "var(--black)",
+                  cursor: syncBlocked || isSyncing ? "not-allowed" : "pointer",
+                  opacity: syncBlocked || isSyncing ? 0.6 : 1,
+                  transition: "all 150ms",
+                }}
+              >
+                <RefreshCw size={13} />
+                {isSyncing ? "Syncing..." : "Sync Views"}
+              </button>
+            )}
           </div>
 
           {/* Description */}
@@ -365,14 +540,14 @@ export function CampaignDetail() {
       {/* Body */}
       <div className="detail-body">
         {/* Overview stats */}
-        <CampaignOverview campaign={campaign} finalized={finalized} />
+        <CampaignOverview campaign={displayCampaign} finalized={finalized} />
 
         {/* Action bar */}
         {!finalized && (
           <ActionBar
             finalized={finalized}
             isSyncing={isSyncing}
-            disabled={campaign.status === "active"}
+            disabled={syncBlocked}
             syncDisabledReason={syncDisabledReason}
             onSyncViews={handleSyncViews}
             onFinalize={handleFinalize}
@@ -391,6 +566,21 @@ export function CampaignDetail() {
             }}
           >
             {actionError}
+          </div>
+        )}
+
+        {actionInfo && (
+          <div
+            style={{
+              color: "#0f766e",
+              fontSize: 13,
+              background: "rgba(20, 184, 166, 0.08)",
+              border: "1px solid rgba(20, 184, 166, 0.2)",
+              padding: "12px 14px",
+              borderRadius: 12,
+            }}
+          >
+            {actionInfo}
           </div>
         )}
 
