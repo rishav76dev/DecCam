@@ -25,8 +25,6 @@ export interface Submission {
   tweetLink: string;
   /** Raw view count from the contract / worker sync */
   views: number;
-  /** Off-chain preview views fetched from the worker before on-chain finalization */
-  previewViews?: number;
   /** Reward value in ETH */
   reward: number;
   /** Reward value in wei */

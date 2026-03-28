@@ -14,19 +14,13 @@ export function SubmissionList({
   onClaim,
   claimPendingId,
 }: Props) {
-  const totalViews = submissions.reduce(
-    (a, s) => a + (s.previewViews ?? s.views),
-    0,
-  );
+  const totalViews = submissions.reduce((a, s) => a + s.views, 0);
 
   return (
     <div className="submissions-panel">
       <div className="submissions-panel-header">
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--black)" }}>
           Submissions ({submissions.length})
-        </span>
-        <span style={{ fontSize: 12, color: "var(--gray-500)" }}>
-          Total views: {totalViews.toLocaleString()}
         </span>
       </div>
 

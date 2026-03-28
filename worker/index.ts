@@ -7,6 +7,7 @@
 //    POST /scrape-batch    → scrape multiple tweets concurrently
 // ─────────────────────────────────────────────────────────────
 
+import "dotenv/config";
 import { ethers } from "ethers";
 import campaignFactoryArtifact from "./abi.json";
 import { scrapeTweet, scrapeBatch, extractTweetId } from "./scraper";

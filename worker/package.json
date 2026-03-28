@@ -9,6 +9,7 @@
     "scrape-test": "bun run scraper.ts"
   },
   "dependencies": {
+    "dotenv": "^17.3.1",
     "ethers": "^6.13.0"
   },
   "devDependencies": {

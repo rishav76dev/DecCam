@@ -27,7 +27,6 @@ export function SubmissionRow({
 }: Props) {
   const initials = submission.creator.slice(2, 4).toUpperCase();
   const bg = avatarColor(submission.creator);
-  const displayedViews = submission.previewViews ?? submission.views;
 
   return (
     <tr>
@@ -57,7 +56,7 @@ export function SubmissionRow({
 
       {/* Views input */}
       <td>
-        <span className="reward-value">{displayedViews.toLocaleString()}</span>
+        <span className="reward-value">{submission.views.toLocaleString()}</span>
       </td>
 
       {/* Reward */}

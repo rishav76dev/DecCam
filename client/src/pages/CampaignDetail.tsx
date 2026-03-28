@@ -55,7 +55,6 @@ export function CampaignDetail() {
   const [claimPendingId, setClaimPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const hasAutoSyncedRef = useRef(false);
-  const [previewViewsById, setPreviewViewsById] = useState<Record<string, number>>({});
   const {
     data: campaign,
     isLoading,
@@ -119,63 +118,6 @@ export function CampaignDetail() {
     hasAutoSyncedRef.current = true;
     void handleSyncViews();
   }, [campaign, isSyncing]);
-
-  useEffect(() => {
-    if (!campaign || campaign.status !== "active" || campaign.submissions.length === 0) {
-      setPreviewViewsById({});
-      return;
-    }
-
-    const activeCampaign = campaign;
-    let cancelled = false;
-
-    async function loadPreviewViews() {
-      try {
-        const res = await fetch(`${workerBaseUrl}/scrape-batch`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tweetIds: activeCampaign.submissions.map((submission) => submission.tweetLink),
-          }),
-        });
-
-        const data = (await res.json().catch(() => null)) as
-          | { results?: Array<{ views?: number; error?: string }> }
-          | null;
-
-        if (!res.ok || !data?.results) {
-          return;
-        }
-
-        const nextPreviewViews = activeCampaign.submissions.reduce<Record<string, number>>(
-          (acc, submission, index) => {
-            const outcome = data.results?.[index];
-            if (typeof outcome?.views === "number") {
-              acc[submission.id] = outcome.views;
-            }
-            return acc;
-          },
-          {},
-        );
-
-        if (!cancelled) {
-          setPreviewViewsById(nextPreviewViews);
-        }
-      } catch {
-        if (!cancelled) {
-          setPreviewViewsById({});
-        }
-      }
-    }
-
-    void loadPreviewViews();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [campaign]);
 
   async function handleFinalize() {
     await handleSyncViews();
@@ -331,13 +273,7 @@ export function CampaignDetail() {
       ? "Views can only be synced after the campaign deadline."
       : actionError ?? undefined;
   const addSubmissionDisabled = finalized || campaign.status === "closed";
-  const displayedSubmissions: Submission[] = campaign.submissions.map((submission) => ({
-    ...submission,
-    previewViews:
-      campaign.status === "active"
-        ? previewViewsById[submission.id] ?? submission.previewViews
-        : undefined,
-  }));
+  const displayedSubmissions: Submission[] = campaign.submissions;
   const submitHint = !isConnected
     ? "Connect a wallet to submit your post on-chain."
     : chainId !== walletClient?.chain?.id

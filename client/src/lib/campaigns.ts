@@ -67,6 +67,10 @@ function readCampaignName(campaignId: number): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function resolveCampaignName(campaignId: number): string {
+  return readCampaignName(campaignId) ?? `Campaign #${campaignId}`;
+}
+
 export function saveCampaignName(campaignId: number, name: string) {
   if (typeof window === "undefined") {
     return;
@@ -246,7 +250,7 @@ function buildCampaignBase(
 
   return {
     id: id.toString(),
-    name: readCampaignName(id) ?? `Campaign #${id}`,
+    name: resolveCampaignName(id),
     description:
       "This campaign is loaded from the contract. Rich metadata is not stored on-chain yet, so the UI can only show the campaign's financial and timing state dynamically.",
     category: "Other",

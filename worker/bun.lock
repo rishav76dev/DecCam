@@ -5,7 +5,8 @@
     "": {
       "name": "worker",
       "dependencies": {
-        "ethers": "^6.16.0",
+        "dotenv": "^17.3.1",
+        "ethers": "^6.13.0",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -29,6 +30,8 @@
     "aes-js": ["aes-js@4.0.0-beta.5", "", {}, "sha512-G965FqalsNyrPqgEGON7nIx1e/OVENSgiEIzyC63haUMuvNnwIgIjMs52hlTCKhkBny7A2ORNlfY9Zu+jmGk1Q=="],
 
     "bun-types": ["bun-types@1.3.11", "", { "dependencies": { "@types/node": "*" } }, "sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg=="],
+
+    "dotenv": ["dotenv@17.3.1", "", {}, "sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA=="],
 
     "ethers": ["ethers@6.16.0", "", { "dependencies": { "@adraffy/ens-normalize": "1.10.1", "@noble/curves": "1.2.0", "@noble/hashes": "1.3.2", "@types/node": "22.7.5", "aes-js": "4.0.0-beta.5", "tslib": "2.7.0", "ws": "8.17.1" } }, "sha512-U1wulmetNymijEhpSEQ7Ct/P/Jw9/e7R1j5XIbPRydgV2DjLVMsULDlNksq3RQnFgKoLlZf88ijYtWEXcPa07A=="],
 
